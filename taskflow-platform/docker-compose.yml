@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: taskflow
+      POSTGRES_PASSWORD: taskflow
+      POSTGRES_DB: taskflow
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    ports: ["8000:8000"]
+    environment: &app-env
+      DATABASE_URL: postgresql://taskflow:taskflow@db:5432/taskflow
+      JWT_SECRET: ${JWT_SECRET:-local-dev-secret-change-me-at-least-32-chars}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@taskflow.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin-change-me-123}
+      SEED_DEMO: "true"          # alice/bob/carol/dave @demo.local, password demo-pass-123
+      DB_POOL_MAX: "10"
+    depends_on:
+      db: { condition: service_healthy }
+
+  # Second instance on another port. Open both in two browsers: changes made on one show up live on the other,
+  # because real-time events travel through the shared database (this is what makes scaling out safe).
+  app2:
+    build: .
+    profiles: ["scale"]
+    ports: ["8001:8000"]
+    environment: *app-env
+    depends_on:
+      app: { condition: service_started }
+
+volumes:
+  pgdata:
